@@ -12,8 +12,9 @@ const buttons = [...document.querySelectorAll('[data-view]')];
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xd1d5db);
 
-const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 100000);
-camera.position.set(4, 3, 5);
+const perspectiveCamera = new THREE.PerspectiveCamera(45, 1, 0.01, 100000);
+perspectiveCamera.position.set(4, 3, 5);
+let camera = perspectiveCamera;
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -41,7 +42,14 @@ function resize() {
   const w = viewport.clientWidth;
   const h = viewport.clientHeight;
   renderer.setSize(w, h, false);
-  camera.aspect = w / h;
+  if (camera.isPerspectiveCamera) {
+    camera.aspect = w / h;
+  } else if (camera.isOrthographicCamera) {
+    const halfHeight = (camera.top - camera.bottom) / 2;
+    const halfWidth = halfHeight * (w / h);
+    camera.left = -halfWidth;
+    camera.right = halfWidth;
+  }
   camera.updateProjectionMatrix();
 }
 window.addEventListener('resize', resize);
@@ -130,7 +138,8 @@ function populateObjects() {
 
 function show3D() {
   currentView = '3d';
-  camera.isPerspectiveCamera = true;
+  camera = perspectiveCamera;
+  controls.object = camera;
   camera.position.set(4, 3, 5);
   frameModel();
   controls.enabled = true;
