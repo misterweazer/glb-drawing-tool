@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GLB Drawing Tool — v0.1</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <header class="toolbar">
+    <div class="title">GLB Drawing Tool <span>v0.1</span></div>
+    <label class="file-button">
+      Загрузить GLB
+      <input id="fileInput" type="file" accept=".glb,.gltf" hidden>
+    </label>
+    <div class="view-buttons">
+      <button data-view="3d" class="active">3D</button>
+      <button data-view="front">FRONT</button>
+      <button data-view="top">TOP</button>
+      <button data-view="right">RIGHT</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="viewport-wrap">
+      <div id="viewport"></div>
+      <div id="status" class="status">Выберите GLB-файл</div>
+    </section>
+
+    <aside class="sidebar">
+      <h2>Объекты</h2>
+      <div class="hint">Для каждого mesh показываются габариты в единицах исходной модели.</div>
+      <div id="modelInfo" class="model-info"></div>
+      <div id="objects" class="objects"></div>
+    </aside>
+  </main>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
