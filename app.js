@@ -136,6 +136,148 @@ function populateObjects() {
     'Габарит: X ' + fmt(size.x) + ' × Y ' + fmt(size.y) + ' × Z ' + fmt(size.z);
 }
 
+
+function clearDimensions() {
+  const old = scene.getObjectByName('dimensionOverlay');
+  if (old) {
+    old.traverse(o => {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) {
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        mats.forEach(m => {
+          if (m.map) m.map.dispose();
+          m.dispose?.();
+        });
+      }
+    });
+    scene.remove(old);
+  }
+}
+
+function makeDimensionLabel(text) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 96;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.font = 'bold 52px Arial';
+  ctx.fillStyle = '#111111';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 256, 48);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false
+  });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(120, 22.5, 1);
+  sprite.renderOrder = 100;
+  sprite.frustumCulled = false;
+  return sprite;
+}
+
+function addDimLine(group, a, b, label, normal, offset) {
+  const start = a.clone().add(normal.clone().multiplyScalar(offset));
+  const end = b.clone().add(normal.clone().multiplyScalar(offset));
+
+  const material = new THREE.LineBasicMaterial({
+    color: 0x111111,
+    depthTest: false,
+    depthWrite: false
+  });
+
+  const main = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([start, end]),
+    material
+  );
+  main.renderOrder = 100;
+  main.frustumCulled = false;
+  group.add(main);
+
+  const direction = end.clone().sub(start).normalize();
+  let tick;
+  if (Math.abs(direction.x) > 0.5) tick = new THREE.Vector3(0, 0, Math.max(offset * 0.18, 8));
+  else if (Math.abs(direction.y) > 0.5) tick = new THREE.Vector3(0, 0, Math.max(offset * 0.18, 8));
+  else tick = new THREE.Vector3(Math.max(offset * 0.18, 8), 0, 0);
+
+  for (const p of [start, end]) {
+    const tickLine = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([
+        p.clone().sub(tick),
+        p.clone().add(tick)
+      ]),
+      material
+    );
+    tickLine.renderOrder = 100;
+    tickLine.frustumCulled = false;
+    group.add(tickLine);
+  }
+
+  const label = makeDimensionLabel(label);
+  label.position.copy(start).add(end).multiplyScalar(0.5);
+  label.position.add(normal.clone().multiplyScalar(Math.max(offset * 0.22, 12)));
+  group.add(label);
+}
+
+function addOverallDimensions(axis) {
+  clearDimensions();
+  if (!model) return;
+
+  const box = new THREE.Box3().setFromObject(model);
+  const min = box.min;
+  const max = box.max;
+  const size = box.getSize(new THREE.Vector3());
+  const offset = Math.max(Math.max(size.x, size.y, size.z) * 0.12, 10);
+
+  const group = new THREE.Group();
+  group.name = 'dimensionOverlay';
+  group.renderOrder = 100;
+  scene.add(group);
+
+  if (axis === 'front') {
+    addDimLine(group,
+      new THREE.Vector3(min.x, min.y, min.z),
+      new THREE.Vector3(max.x, min.y, min.z),
+      fmt(size.x) + ' mm',
+      new THREE.Vector3(0, -1, 0), offset);
+
+    addDimLine(group,
+      new THREE.Vector3(min.x, min.y, min.z),
+      new THREE.Vector3(min.x, min.y, max.z),
+      fmt(size.z) + ' mm',
+      new THREE.Vector3(-1, 0, 0), offset);
+  } else if (axis === 'top') {
+    addDimLine(group,
+      new THREE.Vector3(min.x, min.y, min.z),
+      new THREE.Vector3(max.x, min.y, min.z),
+      fmt(size.x) + ' mm',
+      new THREE.Vector3(0, 0, -1), offset);
+
+    addDimLine(group,
+      new THREE.Vector3(min.x, min.y, min.z),
+      new THREE.Vector3(min.x, max.y, min.z),
+      fmt(size.y) + ' mm',
+      new THREE.Vector3(-1, 0, 0), offset);
+  } else {
+    addDimLine(group,
+      new THREE.Vector3(max.x, min.y, min.z),
+      new THREE.Vector3(max.x, max.y, min.z),
+      fmt(size.y) + ' mm',
+      new THREE.Vector3(1, 0, 0), offset);
+
+    addDimLine(group,
+      new THREE.Vector3(max.x, min.y, min.z),
+      new THREE.Vector3(max.x, min.y, max.z),
+      fmt(size.z) + ' mm',
+      new THREE.Vector3(0, 0, 1), offset);
+  }
+}
+
 function show3D() {
   clearDimensions();
   currentView = '3d';
