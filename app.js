@@ -51,6 +51,7 @@ function resize() {
     camera.right = halfWidth;
   }
   camera.updateProjectionMatrix();
+  if (currentView !== '3d' && model) renderOverallDimensions(currentView);
 }
 window.addEventListener('resize', resize);
 resize();
@@ -92,7 +93,8 @@ function frameModel() {
   camera.lookAt(center);
   controls.target.copy(center);
   controls.update();
-  grid.scale.setScalar(Math.max(maxDim / 10, 1));
+  // Keep the reference grid at a fixed size. Scaling the grid here changes
+  // the apparent scale of the model even though the model itself is unchanged.
 }
 
 function makeObjectRow(o, index) {
@@ -137,149 +139,146 @@ function populateObjects() {
 }
 
 
-function clearDimensions() {
-  const old = scene.getObjectByName('dimensionOverlay');
-  if (old) {
-    old.traverse(o => {
-      if (o.geometry) o.geometry.dispose();
-      if (o.material) {
-        const mats = Array.isArray(o.material) ? o.material : [o.material];
-        mats.forEach(m => {
-          if (m.map) m.map.dispose();
-          m.dispose?.();
-        });
-      }
-    });
-    scene.remove(old);
-  }
+function clearDimensionSvg() {
+  const svg = document.getElementById('dimensionSvg');
+  if (svg) svg.replaceChildren();
 }
 
-function makeDimensionLabel(text) {
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 96;
-  const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.font = 'bold 52px Arial';
-  ctx.fillStyle = '#111111';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(text, 256, 48);
+function projectPoint(point) {
+  const p = point.clone().project(camera);
+  const w = viewport.clientWidth;
+  const h = viewport.clientHeight;
+  return {
+    x: (p.x + 1) * 0.5 * w,
+    y: (1 - p.y) * 0.5 * h,
+    visible: p.z >= -1 && p.z <= 1
+  };
+}
 
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  const material = new THREE.SpriteMaterial({
-    map: texture,
-    transparent: true,
-    depthTest: false,
-    depthWrite: false
+function svgEl(name, attrs = {}) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', name);
+  Object.entries(attrs).forEach(([key, value]) => el.setAttribute(key, value));
+  return el;
+}
+
+function addSvgDimension(svg, a, b, label, offsetX, offsetY) {
+  const pa = projectPoint(a);
+  const pb = projectPoint(b);
+
+  const da = { x: pa.x + offsetX, y: pa.y + offsetY };
+  const db = { x: pb.x + offsetX, y: pb.y + offsetY };
+
+  // Extension lines connect the model bounds to the dimension line.
+  const ea = svgEl('line', {
+    class: 'dim-extension',
+    x1: pa.x, y1: pa.y, x2: da.x, y2: da.y
   });
-  const sprite = new THREE.Sprite(material);
-  sprite.scale.set(120, 22.5, 1);
-  sprite.renderOrder = 100;
-  sprite.frustumCulled = false;
-  return sprite;
-}
-
-function addDimLine(group, a, b, label, normal, offset) {
-  const start = a.clone().add(normal.clone().multiplyScalar(offset));
-  const end = b.clone().add(normal.clone().multiplyScalar(offset));
-
-  const material = new THREE.LineBasicMaterial({
-    color: 0x111111,
-    depthTest: false,
-    depthWrite: false
+  const eb = svgEl('line', {
+    class: 'dim-extension',
+    x1: pb.x, y1: pb.y, x2: db.x, y2: db.y
   });
 
-  const main = new THREE.Line(
-    new THREE.BufferGeometry().setFromPoints([start, end]),
-    material
-  );
-  main.renderOrder = 100;
-  main.frustumCulled = false;
-  group.add(main);
+  const line = svgEl('line', {
+    class: 'dim-line',
+    x1: da.x, y1: da.y, x2: db.x, y2: db.y
+  });
 
-  const direction = end.clone().sub(start).normalize();
-  let tick;
-  if (Math.abs(direction.x) > 0.5) tick = new THREE.Vector3(0, 0, Math.max(offset * 0.18, 8));
-  else if (Math.abs(direction.y) > 0.5) tick = new THREE.Vector3(0, 0, Math.max(offset * 0.18, 8));
-  else tick = new THREE.Vector3(Math.max(offset * 0.18, 8), 0, 0);
+  // CAD-like short diagonal ticks.
+  const dx = db.x - da.x;
+  const dy = db.y - da.y;
+  const length = Math.hypot(dx, dy) || 1;
+  const nx = -dy / length * 7;
+  const ny = dx / length * 7;
 
-  for (const p of [start, end]) {
-    const tickLine = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints([
-        p.clone().sub(tick),
-        p.clone().add(tick)
-      ]),
-      material
-    );
-    tickLine.renderOrder = 100;
-    tickLine.frustumCulled = false;
-    group.add(tickLine);
-  }
+  const tickA = svgEl('line', {
+    class: 'dim-line',
+    x1: da.x - nx, y1: da.y - ny, x2: da.x + nx, y2: da.y + ny
+  });
+  const tickB = svgEl('line', {
+    class: 'dim-line',
+    x1: db.x - nx, y1: db.y - ny, x2: db.x + nx, y2: db.y + ny
+  });
 
-  const label = makeDimensionLabel(label);
-  label.position.copy(start).add(end).multiplyScalar(0.5);
-  label.position.add(normal.clone().multiplyScalar(Math.max(offset * 0.22, 12)));
-  group.add(label);
+  const text = svgEl('text', {
+    class: 'dim-text',
+    x: (da.x + db.x) / 2,
+    y: (da.y + db.y) / 2
+  });
+  text.textContent = label;
+
+  svg.append(ea, eb, line, tickA, tickB, text);
 }
 
-function addOverallDimensions(axis) {
-  clearDimensions();
+function renderOverallDimensions(axis) {
+  clearDimensionSvg();
   if (!model) return;
 
+  const svg = document.getElementById('dimensionSvg');
   const box = new THREE.Box3().setFromObject(model);
   const min = box.min;
   const max = box.max;
   const size = box.getSize(new THREE.Vector3());
-  const offset = Math.max(Math.max(size.x, size.y, size.z) * 0.12, 10);
 
-  const group = new THREE.Group();
-  group.name = 'dimensionOverlay';
-  group.renderOrder = 100;
-  scene.add(group);
+  const px = Math.max(viewport.clientWidth, 1);
+  const py = Math.max(viewport.clientHeight, 1);
+  const margin = Math.min(px, py) * 0.11;
 
   if (axis === 'front') {
-    addDimLine(group,
+    addSvgDimension(
+      svg,
       new THREE.Vector3(min.x, min.y, min.z),
       new THREE.Vector3(max.x, min.y, min.z),
       fmt(size.x) + ' mm',
-      new THREE.Vector3(0, -1, 0), offset);
-
-    addDimLine(group,
+      0,
+      margin
+    );
+    addSvgDimension(
+      svg,
       new THREE.Vector3(min.x, min.y, min.z),
       new THREE.Vector3(min.x, min.y, max.z),
       fmt(size.z) + ' mm',
-      new THREE.Vector3(-1, 0, 0), offset);
+      -margin,
+      0
+    );
   } else if (axis === 'top') {
-    addDimLine(group,
+    addSvgDimension(
+      svg,
       new THREE.Vector3(min.x, min.y, min.z),
       new THREE.Vector3(max.x, min.y, min.z),
       fmt(size.x) + ' mm',
-      new THREE.Vector3(0, 0, -1), offset);
-
-    addDimLine(group,
+      0,
+      margin
+    );
+    addSvgDimension(
+      svg,
       new THREE.Vector3(min.x, min.y, min.z),
       new THREE.Vector3(min.x, max.y, min.z),
       fmt(size.y) + ' mm',
-      new THREE.Vector3(-1, 0, 0), offset);
-  } else {
-    addDimLine(group,
+      -margin,
+      0
+    );
+  } else if (axis === 'right') {
+    addSvgDimension(
+      svg,
       new THREE.Vector3(max.x, min.y, min.z),
       new THREE.Vector3(max.x, max.y, min.z),
       fmt(size.y) + ' mm',
-      new THREE.Vector3(1, 0, 0), offset);
-
-    addDimLine(group,
+      0,
+      margin
+    );
+    addSvgDimension(
+      svg,
       new THREE.Vector3(max.x, min.y, min.z),
       new THREE.Vector3(max.x, min.y, max.z),
       fmt(size.z) + ' mm',
-      new THREE.Vector3(0, 0, 1), offset);
+      margin,
+      0
+    );
   }
 }
 
 function show3D() {
-  clearDimensions();
+  clearDimensionSvg();
   currentView = '3d';
   camera = perspectiveCamera;
   controls.object = camera;
@@ -320,7 +319,7 @@ function showOrthographic(axis) {
   controls.enabled = false;
   grid.visible = false;
   currentView = axis;
-  addOverallDimensions(axis);
+  renderOverallDimensions(axis);
 }
 
 async function loadFile(file) {
