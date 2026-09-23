@@ -137,6 +137,7 @@ function populateObjects() {
 }
 
 function show3D() {
+  clearDimensions();
   currentView = '3d';
   camera = perspectiveCamera;
   controls.object = camera;
@@ -177,6 +178,7 @@ function showOrthographic(axis) {
   controls.enabled = false;
   grid.visible = false;
   currentView = axis;
+  addOverallDimensions(axis);
 }
 
 async function loadFile(file) {
